@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"
 
+const isMobile = isMobileUserAgent()
+
 type Point = { x: number; y: number }
 type DragState =
 	| { dragging: false }
@@ -20,6 +22,8 @@ export function App() {
 
 		bpmOffset = diffBpm
 	}
+
+	if (isMobile) bpmOffset *= -1
 
 	const currentBpm = Math.round(bpm + bpmOffset)
 
@@ -117,9 +121,11 @@ function Blinker(props: { bpm: number }) {
 	useEffect(() => {
 		window.addEventListener("mousedown", (e) => {
 			touched.current = true
+			vibrate()
 		})
 		window.addEventListener("touchstart", (e) => {
 			touched.current = true
+			vibrate()
 		})
 		// TODO: return unsubscribe but w/e
 	}, [])
@@ -182,4 +188,24 @@ function Blinker(props: { bpm: number }) {
 
 function sleep(ms: number) {
 	return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isMobileUserAgent(): boolean {
+	if (navigator && navigator.userAgent) {
+		const userAgent: string = navigator.userAgent.toLowerCase()
+		const mobileKeywords: string[] = [
+			"android",
+			"iphone",
+			"ipad",
+			"mobile",
+			"windows phone",
+		]
+
+		for (const keyword of mobileKeywords) {
+			if (userAgent.includes(keyword)) {
+				return true
+			}
+		}
+	}
+	return false
 }
