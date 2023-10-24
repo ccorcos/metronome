@@ -1,114 +1,185 @@
-import React from "react"
-import { deletePlayer } from "../actions/deletePlayer"
-import { resetGame } from "../actions/resetGame"
-import { Player, useAppState } from "../AppState"
-import { useEnvironment } from "../Environment"
+import React, { useEffect, useRef, useState } from "react"
+
+type Point = { x: number; y: number }
+type DragState =
+	| { dragging: false }
+	| { dragging: true; start: Point; current: Point; id?: number }
 
 export function App() {
-	const environment = useEnvironment()
-	const { app } = environment
-	const players = useAppState((game) => game.players)
+	const [bpm, setBpm] = useState(100)
+
+	const [dragging, setDragging] = useState<DragState>({ dragging: false })
+
+	let bpmOffset = 0
+	if (dragging.dragging) {
+		const { start, current } = dragging
+		const diffPx = current.y - start.y
+
+		const pxPerBpm = window.innerHeight / 100
+		const diffBpm = diffPx / pxPerBpm
+
+		bpmOffset = diffBpm
+	}
+
+	const currentBpm = Math.round(bpm + bpmOffset)
+
+	const currentBpmRef = useRef(currentBpm)
+	currentBpmRef.current = currentBpm
+
+	const draggingRef = useRef(dragging)
+	draggingRef.current = dragging
+
+	useEffect(() => {
+		window.addEventListener("mousedown", (e) => {
+			const point: Point = { x: e.pageX, y: e.pageY }
+			setDragging({ dragging: true, start: point, current: point })
+		})
+
+		window.addEventListener("mousemove", (e) => {
+			const dragging = draggingRef.current
+			if (!dragging.dragging) return
+			const { start } = dragging
+			const point: Point = { x: e.pageX, y: e.pageY }
+			setDragging({ dragging: true, start, current: point })
+		})
+
+		window.addEventListener("mouseup", (e) => {
+			const dragging = draggingRef.current
+			if (!dragging.dragging) return
+			setBpm((bpm) => currentBpmRef.current)
+			setDragging({ dragging: false })
+		})
+
+		window.addEventListener("touchstart", (e) => {
+			const dragging = draggingRef.current
+			const touch = e.touches[0]
+			const id = touch.identifier
+			const point: Point = { x: touch.pageX, y: touch.pageY }
+			setDragging({ dragging: true, start: point, current: point, id })
+		})
+
+		window.addEventListener("touchmove", (e) => {
+			const dragging = draggingRef.current
+			if (!dragging.dragging) return
+			const touch = Array.from(e.touches).find(
+				(touch) => touch.identifier === dragging.id
+			)
+			if (!touch) return
+			const { start, id } = dragging
+			const point: Point = { x: touch.pageX, y: touch.pageY }
+			setDragging({ dragging: true, start, current: point, id })
+		})
+
+		window.addEventListener("touchend", (e) => {
+			const dragging = draggingRef.current
+			if (!dragging.dragging) return
+			setBpm((bpm) => currentBpmRef.current)
+			setDragging({ dragging: false })
+		})
+		// TODO: technically should stop these listeners but w/e
+	}, [])
+
 	return (
 		<div
 			style={{
+				padding: "1em",
 				maxWidth: "100%",
 				width: "24em",
 				margin: "0 auto",
+				textAlign: "center",
+				display: "flex",
+				alignItems: "center",
+				flexDirection: "column",
 			}}
 		>
-			<h2>Score Counter</h2>
-			{players.map((player, index) => (
-				<Player player={player} index={index} key={index} />
-			))}
-			<div style={{ display: "flex", gap: 8 }}>
-				<button onClick={() => app.dispatch.addPlayer()}>Add Player</button>
-				<button onClick={() => resetGame(environment)}>Reset Game</button>
-			</div>
+			<h2>Metronome</h2>
+			<Blinker bpm={currentBpm} />
 		</div>
 	)
 }
 
-function Player(props: { player: Player; index: number }) {
-	const { player, index } = props
-	const environment = useEnvironment()
-	const { app } = environment
+function Blinker(props: { bpm: number }) {
+	const divRef = useRef<HTMLDivElement>(null)
+
+	const bpmRef = useRef(props.bpm)
+	bpmRef.current = props.bpm
+
+	const getPeriodMs = () => {
+		const bpm = bpmRef.current
+		const msPerMinute = 1000 * 60
+		const periodMs = (1 / bpm) * msPerMinute
+
+		return periodMs
+	}
+
+	const touched = useRef(false)
+
+	useEffect(() => {
+		window.addEventListener("mousedown", (e) => {
+			touched.current = true
+		})
+		window.addEventListener("touchstart", (e) => {
+			touched.current = true
+		})
+		// TODO: return unsubscribe but w/e
+	}, [])
+
+	const vibrate = () => {
+		if (!touched.current) return
+		try {
+			window.navigator?.vibrate?.(50)
+		} catch (error) {}
+	}
+
+	useEffect(() => {
+		let cancel = false
+
+		const blink = async () => {
+			const div = divRef.current
+			if (!div) return
+
+			div.style.background = "var(--red)"
+			await sleep(getPeriodMs() / 2)
+			div.style.background = "transparent"
+		}
+
+		const loop = async () => {
+			while (!cancel) {
+				await sleep(getPeriodMs())
+				vibrate()
+				blink()
+			}
+		}
+
+		loop()
+
+		return () => {
+			cancel = true
+		}
+	}, [])
 
 	return (
-		<div style={{ display: "flex", paddingBottom: 8 }}>
-			<div
-				style={{
-					marginRight: 8,
-					position: "relative",
-					flex: 1,
-					display: "flex",
-				}}
-			>
-				<input
-					style={{
-						flex: 1,
-						paddingTop: 6,
-						paddingBottom: 6,
-						textAlign: "left",
-						paddingRight: "3em",
-						width: "1em",
-					}}
-					placeholder={`Player ${index + 1}`}
-					value={player.name}
-					onChange={(event) =>
-						app.dispatch.editName(index, event.target!.value)
-					}
-				/>
-				<div
-					style={{
-						position: "absolute",
-						right: 0,
-						height: "100%",
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "center",
-					}}
-				>
-					<button
-						style={{
-							fontSize: 12,
-							border: "none",
-							background: "transparent",
-							color: "red",
-						}}
-						onClick={() => deletePlayer(environment, index)}
-					>
-						Delete
-					</button>
-				</div>
-			</div>
-			<div style={{ display: "flex" }}>
-				<div>
-					<button
-						style={{ flex: 1, padding: "6px 16px" }}
-						onClick={() => app.dispatch.incrementScore(index, -1)}
-					>
-						-1
-					</button>
-				</div>
-				<div
-					style={{
-						padding: "1px 0px",
-						minWidth: "2em",
-						textAlign: "center",
-						lineHeight: "36px",
-					}}
-				>
-					{player.score}
-				</div>
-				<div>
-					<button
-						style={{ flex: 1, padding: "6px 16px" }}
-						onClick={() => app.dispatch.incrementScore(index, +1)}
-					>
-						+1
-					</button>
-				</div>
-			</div>
+		<div
+			ref={divRef}
+			style={{
+				border: "2px solid var(--text-color)",
+				borderRadius: 99999,
+				height: 300,
+				width: 300,
+				maxHeight: "80vw",
+				maxWidth: "80vw",
+				display: "flex",
+				justifyContent: "center",
+				alignItems: "center",
+				fontSize: "4em",
+				transition: `ease-in-out ${Math.round(getPeriodMs() / 3)}ms background`,
+			}}
+		>
+			{props.bpm}
 		</div>
 	)
+}
+
+function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms))
 }
